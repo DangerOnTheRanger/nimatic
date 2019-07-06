@@ -15,8 +15,9 @@ const
 
 
 proc copyAssets() =
-  echo "Copying assets"
-  os.copyDir(assetDir, joinPath(buildDir, assetDir))
+  if dirExists(assetDir):
+    echo "Copying assets"
+    os.copyDir(assetDir, joinPath(buildDir, assetDir))
 
 proc compilePages() =
   echo "Compiling pages"
