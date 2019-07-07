@@ -42,7 +42,7 @@ At the very least, you'll need to define a couple files:
 
 * `templates/base.html` - this is the base template that Nimatic will cause all other templates to inherit from.
 * One other non-base template for your pages/posts to use.
-* An index page. Technically not necessary as far as Nimatic is concerned, but your site hould probably have one.
+* An index page. Technically not necessary as far as Nimatic is concerned, but your site should probably have one.
 
 
 Pages with Nimatic are directories underneath the `pages` directory, each containing two files: `meta.json`, which
