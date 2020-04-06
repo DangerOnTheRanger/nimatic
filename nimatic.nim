@@ -21,6 +21,8 @@ const
 
 
 proc copyAssets() =
+  if dirExists(buildDir) == false:
+    createDir(buildDir)
   if dirExists(assetDir):
     echo "Copying assets"
     os.copyDir(assetDir, joinPath(buildDir, assetDir))
