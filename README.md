@@ -6,7 +6,10 @@ Nimatic is a flexible static site generator written in Nim.
 ## Installation
 
 Works like most Nim packages; build and install with `nimble install`.
-
+It's available via the [Nimble package directory](https://nimble.directory/pkg/nimatic), so
+you can do `nimble install nimatic` without having to clone this repository - though if you
+install it that way you'll need to grab the example site manually if you want to take a look
+at it.
 
 ## Layout overview
 
