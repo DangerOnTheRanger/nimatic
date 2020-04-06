@@ -44,18 +44,23 @@ At the very least, you'll need to define a couple files:
 * One other non-base template for your pages/posts to use.
 * An index page. Technically not necessary as far as Nimatic is concerned, but your site should probably have one.
 
-
 Pages with Nimatic are directories underneath the `pages` directory, each containing two files: `meta.json`, which
 defines some metadata about the page-to-be, and `page.md`, which is the Markdown content of the page-to-be.
+
+If you want an example of how a bare-bones Nimatic site works, look at the one included in this repository. Running
+Nimatic in this directory will cause the site to be built, and you can then view the result in your web browser.
 
 
 ### Nimatic templating
 
-Nimatic templates are plain text with a couple special strings that get replaced:
+Nimatic templates are interpreted as plain text (though it makes sense to write them as HTML) with a couple special
+strings that get replaced:
 
 * `$title` - this is the title of the current page.
 * `$content` - in a non-base template, this is the body of the page after it has been converted to HTML. In the base
   template, this is the content of the non-base template.
+  
+You can add your own template variables through each page's `meta.json` file, described below.
 
 
 ### meta.json
@@ -72,6 +77,8 @@ There are some other keys with special meaning to Nimatic itself, namely:
   containing `page.md` will be used instead.
 * `output-name` - this is the filename of the page sans the `.html` extension. If not given, the name of the directory
   containing `page.md` will be used instead.
+* `draft` - if present, and set to `true`, then Nimatic will skip building this 
+
 
 ### page.md
 
@@ -100,3 +107,11 @@ enhance the HTML of your pages to your liking after Nimatic has generated them.
 Nimatic, by design, does not handle this step. I personally use and recommend [rclone](https://rclone) for deployment,
 and for local viewing/testing, I use Python 3's `http.server` module, via `python3 -m http.server` inside the `build/` directory
 of my Nimatic site.
+
+
+## Build caching
+
+Nimatic leaves a `.nimatic-cache.json` file in the root directory of your site's source (not in the `build/` folder) that
+uses the last-modified time of your site's static pages to determine whether or not to build them next time it's called. Currently,
+metapages are built every time Nimatic is called without exception, as Nimatic has no way of knowing whether or not they should be
+rebuilt. If, for whatever reason, you want to trigger a full site rebuild from scratch, you can remove `.nimatic-cache.json`.

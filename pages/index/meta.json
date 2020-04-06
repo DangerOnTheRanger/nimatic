@@ -1,0 +1,5 @@
+{
+	"title": "Home",
+	"template": "page.html",
+	"custom": "custom-value"
+}
