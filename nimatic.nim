@@ -5,6 +5,7 @@ import osproc
 import streams
 import strformat
 import strutils
+import times
 
 const
   metaFile = "meta.json"
@@ -16,6 +17,7 @@ const
   pageDir = "pages"
   postprocessorDir = "postprocessors"
   metapageDir = "metapages"
+  cacheFile = ".nimatic-cache.json"
 
 
 proc copyAssets() =
@@ -23,10 +25,44 @@ proc copyAssets() =
     echo "Copying assets"
     os.copyDir(assetDir, joinPath(buildDir, assetDir))
 
-proc compilePage(metadata: JsonNode, pageBody: string, output = "") =
-  var outputName = output
-  if metadata.contains("output-name"):
-    outputName = metadata["output-name"].getStr()
+proc shouldRebuild(inputTimestamp: int64, outputName: string): bool =
+  if fileExists(cacheFile) == false:
+    return true
+  var cacheData = parseFile(cacheFile)
+  if cacheData.hasKey(outputName) == false:
+    return true
+  return cacheData[outputName]["timestamp"].getInt() < inputTimestamp
+  
+
+proc recordBuilt(outputName: string, outputTimestamp: int64) =
+  var cacheData: JsonNode
+  if fileExists(cacheFile):
+    cacheData = parseFile(cacheFile)
+  else:
+    cacheData = newJObject()
+  cacheData[outputName] = newJObject()
+  cacheData[outputName]["timestamp"] = newJInt(outputTimestamp)
+  cacheData[outputName]["unprocessed"] = newJBool(true)
+  writeFile(cacheFile, cacheData.pretty)
+
+
+proc shouldPreprocess(outputName: string): bool =
+  if fileExists(cacheFile) == false:
+    return true
+  var cacheData = parseFile(cacheFile)
+  if cacheData.hasKey(outputName) == false:
+    return true
+  return cacheData[outputName]["unprocessed"].getBool()
+
+proc recordPreprocessed(outputName: string) =
+  var cacheData = parseFile(cacheFile)
+  cacheData[outputName]["unprocessed"] = newJBool(false)
+  writeFile(cacheFile, cacheData.pretty)
+
+proc compilePage(metadata: JsonNode, pageBody, outputName: string) =
+  if metadata{"draft"}.getBool() == true:
+    # don't compile drafts
+    return
   var title = outputName
   if metadata.contains("title"):
     title = metadata["title"].getStr()
@@ -36,16 +72,18 @@ proc compilePage(metadata: JsonNode, pageBody: string, output = "") =
     quit(1)
   templateTarget = metadata["template"].getStr()
   var pageTemplate = readFile(joinPath(templateDir, templateTarget))
-  for jsonKey, jsonValue in metadata.pairs:
-    pageTemplate = pageTemplate.replace("$" & jsonKey, jsonValue.getStr())
   var baseTemplate = readFile(joinPath(templateDir, baseTemplateFile))
   baseTemplate = baseTemplate.replace("$title", title)
   var compiledTemplate = baseTemplate.replace("$content", pageTemplate)
+  for jsonKey, jsonValue in metadata.pairs:
+    compiledTemplate = compiledTemplate.replace("$" & jsonKey, jsonValue.getStr())
   var compiledMarkdown = markdown(pageBody)
   var compiledPage = compiledTemplate.replace("$content", compiledMarkdown)
   var outputFilename = outputName & ".html"
   var outputPath = joinPath(buildDir, outputFilename)
   writeFile(outputPath, compiledPage)
+  var currentTime = getTime().toUnix()
+  recordBuilt(outputName, currentTime)
   echo "Compiled page ", outputName
 
 proc compileMetapages() =
@@ -60,7 +98,10 @@ proc compileMetapages() =
     var singleMetadata = parseJson(jsonContents)
     if singleMetadata.contains("output-name") == false:
       singleMetadata.add("output-name", newJString(entry))
-    allMetadata.add(singleMetadata)
+    var pageContents = readFile(joinPath(pageDir, entry, pageFile))
+    singleMetadata.add("page-source", newJString(pageContents))
+    if singleMetadata{"draft"}.getBool() == false:
+      allMetadata.add(singleMetadata)
   for kind, entry in walkDir(metapageDir, relative=true):
     if kind != pcFile:
       continue
@@ -78,8 +119,9 @@ proc compileMetapages() =
         echo metadata
         quit(errorCode)
     var metaJson = parseJson(metadata)
+    var outputName = metaJson["output-name"].getStr()
     var pageBody = metaJson["body"].getStr() 
-    compilePage(metaJson, pageBody)
+    compilePage(metaJson, pageBody, outputName)
 
 proc compilePages() =
   echo "Compiling pages"
@@ -93,25 +135,36 @@ proc compilePages() =
     try:
       var jsonContents = readFile(joinPath(pageDir, entry, metaFile))
       metadata = parseJson(jsonContents)
+      if metadata.contains("output-name"):
+        outputName = metadata["output-name"].getStr()
     except JsonParsingError:
       echo "Error parsing meta.json for entry ", outputName, ": ", getCurrentExceptionMsg()
       quit(1)
-    var markdownData = readFile(joinPath(pageDir, entry, pageFile))
-    compilePage(metadata, markdownData, outputName)
+    var pageLastModified = getFileInfo(joinPath(pageDir, entry, pageFile)).lastWriteTime
+    var metaLastModified = getFileInfo(joinPath(pageDir, entry, metaFile)).lastWriteTime
+    var lastModified = pageLastModified
+    if metaLastModified > pageLastModified:
+      lastModified = metaLastModified
+    if shouldRebuild(lastModified.toUnix(), outputName):
+      var markdownData = readFile(joinPath(pageDir, entry, pageFile))
+      compilePage(metadata, markdownData, outputName)
 
 proc runPostprocessors() =
   if dirExists(postprocessorDir) == false:
     echo postprocessorDir, " not found, not running postprocessors"
     return
   echo "Running postprocessors"
-  for kind, entry in walkDir(postprocessorDir, relative=true):
-    if kind != pcFile:
+  for buildKind, buildEntry in walkDir(buildDir, relative=true):
+    if buildKind != pcFile:
       continue
-    var postprocessorPath = joinPath(postprocessorDir, entry)
-    if fpUserExec in getFilePermissions(postprocessorPath) == false:
-      continue
-    for buildKind, buildEntry in walkDir(buildDir, relative=true):
-      if buildKind != pcFile:
+    var outputName = splitFile(buildEntry).name
+    if shouldPreprocess(outputName) == false:
+        continue
+    for kind, entry in walkDir(postprocessorDir, relative=true):
+      if kind != pcFile:
+        continue
+      var postprocessorPath = joinPath(postprocessorDir, entry)
+      if fpUserExec in getFilePermissions(postprocessorPath) == false:
         continue
       var pagePath = joinPath(buildDir, buildEntry)
       var unprocessedData = readFile(pagePath)
@@ -126,6 +179,7 @@ proc runPostprocessors() =
         echo postProcessedData
         quit(errorCode)
       writeFile(pagePath, postprocessedData)
+    recordPreprocessed(outputName)
 
 copyAssets()
 compileMetapages()
