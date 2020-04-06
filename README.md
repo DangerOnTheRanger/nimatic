@@ -108,7 +108,7 @@ enhance the HTML of your pages to your liking after Nimatic has generated them.
 
 ## Deploying/serving a site
 
-Nimatic, by design, does not handle this step. I personally use and recommend [rclone](https://rclone) for deployment,
+Nimatic, by design, does not handle this step. I personally use and recommend [rclone](https://rclone.org) for deployment,
 and for local viewing/testing, I use Python 3's `http.server` module, via `python3 -m http.server` inside the `build/` directory
 of my Nimatic site.
 
