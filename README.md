@@ -3,6 +3,10 @@ Nimatic - a static site generator
 
 Nimatic is a flexible static site generator written in Nim.
 
+## Installation
+
+Works like most Nim packages; build and install with `nimble install`.
+
 
 ## Layout overview
 
