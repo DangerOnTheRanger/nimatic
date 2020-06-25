@@ -5,6 +5,7 @@ import osproc
 import streams
 import strformat
 import strutils
+import threadpool
 import times
 
 const
@@ -61,7 +62,7 @@ proc recordPreprocessed(outputName: string) =
   cacheData[outputName]["unprocessed"] = newJBool(false)
   writeFile(cacheFile, cacheData.pretty)
 
-proc compilePage(metadata: JsonNode, pageBody, outputName: string) =
+proc compilePage(metadata: JsonNode, pageBody, outputName: string) {.gcsafe.} =
   if metadata{"draft"}.getBool() == true:
     # don't compile drafts
     return
@@ -88,6 +89,20 @@ proc compilePage(metadata: JsonNode, pageBody, outputName: string) =
   recordBuilt(outputName, currentTime)
   echo "Compiled page ", outputName
 
+proc compileMetapage(metadata: string, metapagePath: string) =
+  var metapage = startProcess(metapagePath)
+  metapage.inputStream.write(metadata)
+  metapage.inputStream.close()
+  var errorCode = waitForExit(metapage)
+  var metadata = metapage.outputStream.readAll()
+  if errorCode != 0:
+    echo metapagePath, " exited with non-zero error code"
+    quit(errorCode)
+  var metaJson = parseJson(metadata)
+  var outputName = metaJson["output-name"].getStr()
+  var pageBody = metaJson["body"].getStr() 
+  compilePage(metaJson, pageBody, outputName)
+
 proc compileMetapages() =
   if dirExists(metapageDir) == false:
     return
@@ -104,26 +119,15 @@ proc compileMetapages() =
     singleMetadata.add("page-source", newJString(pageContents))
     if singleMetadata{"draft"}.getBool() == false:
       allMetadata.add(singleMetadata)
+  let allMetadataStr = allMetadata.pretty
   for kind, entry in walkDir(metapageDir, relative=true):
     if kind != pcFile:
       continue
-    var metapagePath = joinPath(metaPageDir, entry)
+    let metapagePath = joinPath(metaPageDir, entry)
     if fpUserExec in getFilePermissions(metapagePath) == false:
       continue
     echo "Building metapage ", entry
-    var metapage = startProcess(metapagePath)
-    metapage.inputStream.write(allMetadata.pretty)
-    metapage.inputStream.close()
-    var errorCode = waitForExit(metapage)
-    var metadata = metapage.outputStream.readAll()
-    if errorCode != 0:
-        echo entry, " exited with non-zero error code"
-        echo metadata
-        quit(errorCode)
-    var metaJson = parseJson(metadata)
-    var outputName = metaJson["output-name"].getStr()
-    var pageBody = metaJson["body"].getStr() 
-    compilePage(metaJson, pageBody, outputName)
+    compileMetapage(allMetadataStr, metapagePath)
 
 proc compilePages() =
   echo "Compiling pages"
@@ -149,7 +153,8 @@ proc compilePages() =
       lastModified = metaLastModified
     if shouldRebuild(lastModified.toUnix(), outputName):
       var markdownData = readFile(joinPath(pageDir, entry, pageFile))
-      compilePage(metadata, markdownData, outputName)
+      spawn compilePage(metadata, markdownData, outputName)
+  sync()
 
 proc runPostprocessors() =
   if dirExists(postprocessorDir) == false:

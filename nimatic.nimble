@@ -1,6 +1,6 @@
 # package
 
-version = "0.1.0"
+version = "0.2.0"
 author = "Kermit Alexander II"
 description = "A static site generator written in Nim"
 license = "2-clause BSD"
